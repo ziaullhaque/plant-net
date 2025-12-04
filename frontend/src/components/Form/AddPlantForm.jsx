@@ -69,8 +69,8 @@ const AddPlantForm = () => {
         plantImage: imageURL,
         plantName,
         plantDescription,
-        Quantity: Number(plantQuantity),
-        Price: Number(plantPrice),
+        quantity: Number(plantQuantity),
+        price: Number(plantPrice),
         plantCategory,
         seller: {
           image: user?.photoURL,

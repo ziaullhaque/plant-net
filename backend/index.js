@@ -1,7 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const admin = require("firebase-admin");
 const port = process.env.PORT || 3000;
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
@@ -14,13 +15,12 @@ admin.initializeApp({
 
 const app = express();
 // middleware
+// "http://localhost:5173",
+// "http://localhost:5174",
+// "https://b12-m11-session.web.app",
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://b12-m11-session.web.app",
-    ],
+    origin: [process.env.CLIENT_DOMAIN],
     credentials: true,
     optionSuccessStatus: 200,
   })
@@ -56,6 +56,7 @@ async function run() {
     // await client.connect();
     const db = client.db("model-db");
     const plantsCollection = db.collection("plants");
+    const ordersCollection = db.collection("orders");
 
     //  Save a plant data in db
     app.post("/plants", async (req, res) => {
@@ -68,6 +69,118 @@ async function run() {
     //  get all plants from db
     app.get("/plants", async (req, res) => {
       const result = await plantsCollection.find().toArray();
+      res.send(result);
+    });
+
+    //  get single plant from db
+    app.get("/plants/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await plantsCollection.findOne({ _id: new ObjectId(id) });
+      res.send(result);
+    });
+
+    // payment endpoints
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      console.log(paymentInfo);
+      // res.send(paymentInfo);
+
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: paymentInfo?.plantName,
+                description: paymentInfo?.plantDescription,
+                images: [paymentInfo?.plantImage],
+              },
+              unit_amount: paymentInfo?.price * 100,
+            },
+            quantity: paymentInfo?.quantity,
+          },
+        ],
+        customer_email: paymentInfo?.customer?.email,
+        mode: "payment",
+        metadata: {
+          plantId: paymentInfo.plantId,
+          customer: paymentInfo?.customer.email,
+        },
+        success_url: `${process.env.CLIENT_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.CLIENT_DOMAIN}/plant/${paymentInfo?.plantId}`,
+      });
+
+      res.send({ url: session.url });
+    });
+
+    app.post("/payment-success", async (req, res) => {
+      const { sessionId } = req.body;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const plant = await plantsCollection.findOne({
+        _id: new ObjectId(session.metadata.plantId),
+      });
+      const order = await ordersCollection.findOne({
+        transactionId: session.payment_intent,
+      });
+      console.log(session);
+      if (session.status === "complete" && plant && !order) {
+        // save order data in db
+        const orderInfo = {
+          plantId: session.metadata.plantId,
+          transactionId: session.payment_intent,
+          customer: session.metadata.customer,
+          status: "pending",
+          seller: plant.seller,
+          name: plant.plantName,
+          category: plant.plantCategory,
+          quantity: 1,
+          price: session.amount_total / 100,
+          image: plant?.plantImage,
+        };
+        const result = await ordersCollection.insertOne(orderInfo);
+        // update plant quantity
+        await plantsCollection.updateOne(
+          {
+            _id: new ObjectId(session.metadata.plantId),
+          },
+          { $inc: { quantity: -1 } }
+        );
+        return res.send({
+          transactionId: session.payment_intent,
+          orderId: result.insertedId,
+        });
+        console.log(orderInfo);
+      }
+      res.send(
+        res.send({
+          transactionId: session.payment_intent,
+          orderId: order._id,
+        })
+      );
+    });
+
+    // get all orders for a customer by email
+    app.get("/my-orders/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await ordersCollection.find({ customer: email }).toArray();
+      res.send(result);
+    });
+
+    // get all orders for a seller by email
+    app.get("/manage-orders/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await ordersCollection
+        .find({ "seller.email": email })
+        .toArray();
+      res.send(result);
+    });
+
+    // get all plants for a seller by email
+    app.get("/my-inventory/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await plantsCollection
+        .find({ "seller.email": email })
+        .toArray();
       res.send(result);
     });
 

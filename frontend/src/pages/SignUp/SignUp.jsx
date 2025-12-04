@@ -39,6 +39,8 @@ const SignUp = () => {
       // );
       // const imageURL =  data?.data?.data?.display_url;;
       const imageURL = await imageUpload(imageFile);
+      // const cloudinaryImageURL = await imageUploadCloudinary(imageFile);
+      // console.log("Cloudinary response ", cloudinaryImageURL);
       // console.log(data);
       // console.log(data.data.display_url);
       //2. User Registration
