@@ -1,16 +1,17 @@
-import { Link, Navigate, useLocation, useNavigate } from 'react-router'
-import toast from 'react-hot-toast'
-import LoadingSpinner from '../../components/Shared/LoadingSpinner'
-import useAuth from '../../hooks/useAuth'
-import { FcGoogle } from 'react-icons/fc'
-import { TbFidgetSpinner } from 'react-icons/tb'
+import { Link, Navigate, useLocation, useNavigate } from "react-router";
+import toast from "react-hot-toast";
+import LoadingSpinner from "../../components/Shared/LoadingSpinner";
+import useAuth from "../../hooks/useAuth";
+import { FcGoogle } from "react-icons/fc";
+import { TbFidgetSpinner } from "react-icons/tb";
 import { useForm } from "react-hook-form";
+import { saveOrUpdateUser } from "../../utils";
 
 const Login = () => {
   const { signIn, signInWithGoogle, loading, user, setLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   // React Hook Form
   const {
     register,
@@ -18,25 +19,30 @@ const Login = () => {
     formState: { errors },
   } = useForm();
   console.log(errors);
-  
+
   const from = location.state || "/";
 
   if (loading) return <LoadingSpinner />;
   if (user) return <Navigate to={from} replace={true} />;
 
-
   const onSubmit = async (data) => {
     const { email, password } = data;
-      try {
-        //User Login
-        await signIn(email, password)
+    try {
+      //User Login
+      const {user} = await signIn(email, password);
 
-        navigate(from, { replace: true })
-        toast.success('Login Successful')
-      } catch (err) {
-        console.log(err)
-        toast.error(err?.message)
-      }
+      await saveOrUpdateUser({
+        name: user?.displayName,
+        email: user?.email,
+        image: user?.photoURL,
+      });
+
+      navigate(from, { replace: true });
+      toast.success("Login Successful");
+    } catch (err) {
+      console.log(err);
+      toast.error(err?.message);
+    }
   };
   // form submit handler
   // const handleSubmit = async event => {
@@ -62,7 +68,14 @@ const Login = () => {
   const handleGoogleSignIn = async () => {
     try {
       //User Registration using google
-      await signInWithGoogle();
+      const { user } = await signInWithGoogle();
+
+      await saveOrUpdateUser({
+        name: user?.displayName,
+        email: user?.email,
+        image: user?.photoURL,
+      });
+
       navigate(from, { replace: true });
       toast.success("Login Successful");
     } catch (err) {
@@ -190,6 +203,6 @@ const Login = () => {
       </div>
     </div>
   );
-}
+};
 
-export default Login
+export default Login;
